@@ -36,7 +36,6 @@ const EMAIL_STATUS_KEY = 'dexmail_email_status';
 
 class MailService {
   async sendEmail(data: SendEmailData): Promise<SendEmailResponse & { claimCode?: string; isDirectTransfer?: boolean }> {
-    // Check if recipient is registered (only for crypto transfers)
     let isRecipientRegistered = false;
     let isWalletDeployed = false;
 
@@ -63,7 +62,6 @@ class MailService {
       }
     }
 
-    // Generate claim code ONLY if crypto is being sent AND recipient is NOT registered
     let claimCode: string | undefined;
     const isDirectTransfer = isRecipientRegistered && isWalletDeployed;
 
@@ -72,7 +70,6 @@ class MailService {
       console.log('[MailService] Generated claim code for unregistered user:', claimCode);
     }
 
-    // Prepare email body with appropriate content
     let emailBody = data.body;
     if (data.cryptoTransfer?.enabled && data.cryptoTransfer.assets.length > 0) {
       const assetsText = data.cryptoTransfer.assets.map(asset => {
@@ -88,11 +85,9 @@ class MailService {
       emailBody += `You've received: ${assetsText}\n\n`;
 
       if (isDirectTransfer) {
-        // Direct transfer message for registered users
         emailBody += `✅ Assets have been transferred directly to your wallet!\n\n`;
         emailBody += `You can view them in your DexMail dashboard.\n`;
       } else if (claimCode) {
-        // Claim code instructions for unregistered users
         const claimUrl = getClaimUrl(claimCode);
 
         emailBody += `Your Claim Code: ${formatClaimCode(claimCode)}\n\n`;
@@ -113,10 +108,10 @@ class MailService {
         from: data.from,
         to: data.to,
         subject: data.subject,
-        body: emailBody, // Use modified body with claim code or direct transfer message
+        body: emailBody,
         timestamp: new Date().toISOString(),
         cryptoTransfer: data.cryptoTransfer,
-        claimCode: claimCode, // Include claim code in IPFS metadata (only for unregistered users)
+        claimCode: claimCode,
         isDirectTransfer: isDirectTransfer
       })
     });
@@ -128,7 +123,6 @@ class MailService {
     const { cid } = await ipfsResponse.json();
     console.log('[MailService] Uploaded to IPFS with CID:', cid);
 
-    // 1. Handle Crypto Assets & Mail Indexing
     let txHash = '';
     const transferHashes: string[] = [];
 
@@ -136,15 +130,11 @@ class MailService {
       throw new Error('Failed to get CID from IPFS upload');
     }
 
-    // Convert CID to bytes32 using viem (safer for browser)
-    // stringToHex returns 0x-prefixed hex string
     const cidHex = stringToHex(cid);
-    // Ensure it fits in bytes32 (64 hex chars + 2 for 0x)
     const cidBytes32 = cidHex.slice(0, 66).padEnd(66, '0') as `0x${string}`;
 
     console.log('[MailService] Generated CID hash:', cidBytes32);
 
-    // Store the CID mapping in MongoDB via API
     try {
       const storeResponse = await fetch('/api/cid/store', {
         method: 'POST',
@@ -164,7 +154,6 @@ class MailService {
       console.error('[MailService] Error calling CID store API:', apiError);
     }
 
-    // Also store in localStorage as fallback for offline support
     if (typeof window !== 'undefined') {
       try {
         const cidMap = JSON.parse(localStorage.getItem('ipfs_cid_map') || '{}');
@@ -198,20 +187,18 @@ class MailService {
         tokenAddress = asset.token!;
       }
 
-      // Ensure approval if needed
       if (asset.type === 'erc20') {
         await cryptoService.ensureApproval(tokenAddress, amount);
       }
 
-      // Call sendMailWithCrypto (Atomic operation)
       txHash = await writeContract(wagmiConfig, {
         address: BASEMAILER_ADDRESS,
         abi: baseMailerAbi,
         functionName: 'sendMailWithCrypto',
         args: [
-          cid, // Use string CID
+          cid,
           recipient,
-          isExternal, // Use calculated flag
+          isExternal,
           tokenAddress,
           amount,
           isNft
@@ -222,7 +209,6 @@ class MailService {
       console.log('[MailService] Sent mail with crypto. Tx:', txHash);
       transferHashes.push(txHash);
 
-      // Handle additional assets if any (separate transactions)
       if (data.cryptoTransfer.assets.length > 1) {
         for (let i = 1; i < data.cryptoTransfer.assets.length; i++) {
           const extraAsset = data.cryptoTransfer.assets[i];
@@ -237,22 +223,20 @@ class MailService {
       }
 
     } else if (data.to.length > 0) {
-      // Regular mail indexing without crypto
       txHash = await writeContract(wagmiConfig, {
         address: BASEMAILER_ADDRESS,
         abi: baseMailerAbi,
         functionName: 'indexMail',
-        args: [cid, recipient, "", isExternal, false] // Added originalSender="" and used string CID
+        args: [cid, recipient, "", isExternal, false]
       });
       console.log('[MailService] Indexed mail on blockchain with tx:', txHash);
     }
 
-    // 3. Store claim code if generated (only for unregistered users)
     if (claimCode && data.cryptoTransfer?.assets) {
-      const recipient = data.to[0]; // Recipient is already determined earlier
+      const recipient = data.to[0];
       storeClaimCode(
         claimCode,
-        txHash, // Use the mail indexing tx hash as the primary reference
+        txHash,
         recipient,
         data.from,
         data.cryptoTransfer.assets,
@@ -260,15 +244,6 @@ class MailService {
         isDirectTransfer
       );
     }
-
-    // 4. Send via SendGrid (SMTP Relay) if recipient is an external email
-    // We do this for all emails that look like valid email addresses, 
-    // regardless of whether they are registered on DexMail or not, 
-    // to ensure they get a notification/copy.
-    // Or strictly for unregistered users? 
-    // The user request said "implement sendgrid for mail sending".
-    // Let's send if it looks like an email address.
-    // const recipient = data.to[0]; // Already declared above
     if (isExternal) {
       try {
         console.log('--------------------------------------------------');
@@ -282,10 +257,10 @@ class MailService {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             to: recipient,
-            from: data.from, // Sending directly as the user (requires Domain Auth)
-            replyTo: data.from, // User's address/email so replies go to them
+            from: data.from,
+            replyTo: data.from, 
             subject: data.subject,
-            text: emailBody, // Use the body that includes claim instructions
+            text: emailBody,
             html: `
 <!DOCTYPE html>
 <html>
@@ -335,7 +310,6 @@ class MailService {
     try {
       console.log('[MailService] fetchEmailFromIPFS called with CID hash:', cidHash);
 
-      // Skip if it's the dummy CID (all zeros)
       if (cidHash === '0x' + '0'.repeat(64)) {
         console.log('[MailService] Skipping dummy CID');
         return null;
@@ -343,16 +317,10 @@ class MailService {
 
       let actualCid: string | undefined;
 
-      // Check if the input is already a full CID (starts with Qm or bafy)
-      // The contract now stores the full CID string, so we might receive it directly.
       if (!cidHash.startsWith('0x')) {
         actualCid = cidHash;
         console.log('[MailService] Input is already a full CID, skipping lookup:', actualCid);
       } else {
-        // It's a hash (0x...), proceed with lookup
-        // Try to get CID from MongoDB first
-
-        // Try to get CID from MongoDB first
         try {
           const retrieveResponse = await fetch(`/api/cid/retrieve?cidHash=${encodeURIComponent(cidHash)}`);
 
@@ -369,7 +337,6 @@ class MailService {
           console.error('[MailService] Error calling CID retrieve API:', apiError);
         }
 
-        // Fallback: Try localStorage
         if (!actualCid && typeof window !== 'undefined') {
           try {
             const cidMap = JSON.parse(localStorage.getItem('ipfs_cid_map') || '{}');
@@ -389,7 +356,6 @@ class MailService {
         return null;
       }
 
-      // Use ipfs.io gateway which supports CORS
       const gatewayUrl = `https://ipfs.io/ipfs/${actualCid}`;
       console.log('[MailService] Fetching from IPFS:', gatewayUrl);
 
@@ -419,7 +385,6 @@ class MailService {
       console.log(`[MailService] Fetching inbox for: ${email}`);
       console.log(`[MailService] Contract address: ${BASEMAILER_ADDRESS}`);
 
-      // Check if we're connected to the right network
       const { getAccount, getChainId } = await import('@wagmi/core');
       const account = getAccount(wagmiConfig);
       const chainId = getChainId(wagmiConfig);
@@ -437,7 +402,6 @@ class MailService {
       console.log(`[MailService] Found ${mailIds.length} mail(s) in inbox`);
       console.log(`[MailService] Mail IDs:`, mailIds);
 
-      // Empty inbox is a valid state, not an error
       if (mailIds.length === 0) {
         console.log('[MailService] Inbox is empty - no mails indexed yet');
         return [];
@@ -449,7 +413,6 @@ class MailService {
         try {
           console.log(`[MailService] Fetching mail ID: ${id}`);
 
-          // Step 1: Get mail metadata from contract
           const mail = await readContract(wagmiConfig, {
             address: BASEMAILER_ADDRESS,
             abi: baseMailerAbi,
@@ -459,8 +422,7 @@ class MailService {
 
           console.log(`[MailService] Mail ${id} - CID: ${mail.cid}, Sender: ${mail.sender}`);
 
-          // Step 2: Get sender's email from their wallet address
-          let senderEmail = mail.sender; // Fallback to address if lookup fails
+          let senderEmail = mail.sender;
           try {
             const emailFromAddress = await readContract(wagmiConfig, {
               address: BASEMAILER_ADDRESS,
@@ -477,14 +439,11 @@ class MailService {
             console.warn(`[MailService] Could not resolve email for address ${mail.sender}, using address as fallback`);
           }
 
-          // Step 3: Fetch email content from IPFS using the CID
           const ipfsContent = await this.fetchEmailFromIPFS(mail.cid);
 
           const subject = ipfsContent?.subject || 'Email from blockchain';
           const body = ipfsContent?.body || 'This email was sent via DexMail';
 
-          // If mail is external (bridged), use the originalSender from contract
-          // Otherwise use the resolved sender from contract
           const finalSender = (mail.isExternal && mail.originalSender) ? mail.originalSender : senderEmail;
 
           messages.push({
@@ -499,15 +458,12 @@ class MailService {
           });
         } catch (mailError) {
           console.error(`[MailService] Error fetching mail ID ${id}:`, mailError);
-          // Continue with other mails even if one fails
         }
       }
 
       console.log(`[MailService] Successfully fetched ${messages.length} message(s)`);
       return messages.reverse();
     } catch (error: any) {
-      // Handle the specific case where contract returns 0x (empty data)
-      // This happens when the inbox is empty or the contract doesn't exist
       if (error?.name === 'ContractFunctionZeroDataError' ||
         error?.cause?.name === 'ContractFunctionZeroDataError' ||
         error?.message?.includes('returned no data')) {
@@ -519,14 +475,13 @@ class MailService {
         return [];
       }
 
-      // This is an actual error (network issue, wrong network, etc.)
       console.error('[MailService] Error fetching inbox:', error);
       console.error('[MailService] Error details:', {
         name: error?.name,
         message: error?.message,
         cause: error?.cause
       });
-      throw error; // Re-throw to let caller handle it
+      throw error;
     }
   }
 
@@ -534,7 +489,6 @@ class MailService {
     try {
       console.log(`[MailService] Fetching sent emails for: ${email}`);
 
-      // Get the user's wallet address from their email
       const { getAccount } = await import('@wagmi/core');
       const account = getAccount(wagmiConfig);
 
@@ -543,7 +497,6 @@ class MailService {
         return [];
       }
 
-      // Query MailSent events where sender is the user's address
       const { getPublicClient } = await import('@wagmi/core');
       const publicClient = getPublicClient(wagmiConfig);
 
@@ -552,16 +505,12 @@ class MailService {
         return [];
       }
 
-      // Get current block number
       const currentBlock = await publicClient.getBlockNumber();
 
-      // Query last 50,000 blocks to stay within RPC limits
-      // This should cover approximately the last few days on Base Sepolia
       const fromBlock = currentBlock > BigInt(50000) ? currentBlock - BigInt(50000) : BigInt(0);
 
       console.log(`[MailService] Querying MailSent events from block ${fromBlock} to ${currentBlock}`);
 
-      // Get MailSent events from the contract
       const logs = await publicClient.getLogs({
         address: BASEMAILER_ADDRESS,
         event: {
@@ -592,7 +541,6 @@ class MailService {
           const recipient = log.args.recipient as string;
           const cidHash = log.args.cid as string;
 
-          // Get full mail details from contract
           const mail = await readContract(wagmiConfig, {
             address: BASEMAILER_ADDRESS,
             abi: baseMailerAbi,
@@ -600,7 +548,6 @@ class MailService {
             args: [mailId]
           }) as any;
 
-          // Fetch email content from IPFS
           const ipfsContent = await this.fetchEmailFromIPFS(cidHash);
 
           const subject = ipfsContent?.subject || 'Sent Email';
@@ -608,7 +555,7 @@ class MailService {
 
           messages.push({
             messageId: mailId.toString(),
-            from: email, // User's email
+            from: email,
             to: [recipient],
             subject: subject,
             body: body,
@@ -622,7 +569,7 @@ class MailService {
       }
 
       console.log(`[MailService] Successfully fetched ${messages.length} sent message(s)`);
-      return messages.reverse(); // Most recent first
+      return messages.reverse();
     } catch (error) {
       console.error('[MailService] Error fetching sent emails:', error);
       return [];
@@ -653,7 +600,6 @@ class MailService {
     return { success: true, messageId };
   }
 
-  // Email Status Management Methods
   private getStatusMap(): Record<string, EmailStatus> {
     if (typeof window === 'undefined') return {};
     const stored = localStorage.getItem(EMAIL_STATUS_KEY);

@@ -1,19 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { uploadJSONToIPFS } from '@/lib/pinata';
 import { indexMailOnChain } from '@/server/utils';
-import fs from 'fs';
-import path from 'path';
-
 // SendGrid Inbound Parse Webhook handler
 export async function POST(req: NextRequest) {
-    const logFile = path.join(process.cwd(), 'inbound-logs.txt');
-    const log = (msg: string) => {
-        try {
-            fs.appendFileSync(logFile, `[${new Date().toISOString()}] ${msg}\n`);
-        } catch (e) {
-            console.error('Failed to write to log file:', e);
-        }
-    };
+    // Vercel logs are captured from console.log
+    const log = (msg: string) => console.log(`[Inbound Webhook] ${msg}`);
 
     try {
         log('Inbound webhook triggered');
