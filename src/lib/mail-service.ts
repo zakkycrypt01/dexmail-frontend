@@ -551,7 +551,8 @@ class MailService {
             { type: 'uint256', name: 'mailId', indexed: true },
             { type: 'address', name: 'sender', indexed: true },
             { type: 'string', name: 'recipient' },
-            { type: 'bytes32', name: 'cid' }
+            { type: 'string', name: 'cid' },
+            { type: 'string', name: 'originalSender' }
           ]
         },
         args: {

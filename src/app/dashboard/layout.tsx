@@ -16,6 +16,9 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { ComposeDialog } from '@/components/mail/compose-dialog';
 import { MailProvider } from '@/contexts/mail-context';
+import { useAuth } from '@/contexts/auth-context';
+import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
 
 function BottomNavBar() {
   const pathname = usePathname();
@@ -76,6 +79,27 @@ function DashboardLayoutContent({
   children: React.ReactNode;
 }) {
   const { toggleSidebar } = useSidebar();
+  const { isAuthenticated, isLoading } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      router.push('/login');
+    }
+  }, [isLoading, isAuthenticated, router]);
+
+  if (isLoading) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return null;
+  }
+
   return (
     <>
       <div className="md:hidden flex flex-col h-screen w-full">
