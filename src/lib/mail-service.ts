@@ -258,7 +258,7 @@ class MailService {
           body: JSON.stringify({
             to: recipient,
             from: data.from,
-            replyTo: data.from, 
+            replyTo: data.from,
             subject: data.subject,
             text: emailBody,
             html: `
@@ -380,17 +380,30 @@ class MailService {
     }
   }
 
+  private getCache(key: string): Record<string, EmailMessage> {
+    if (typeof window === 'undefined') return {};
+    try {
+      return JSON.parse(localStorage.getItem(key) || '{}');
+    } catch {
+      return {};
+    }
+  }
+
+  private setCache(key: string, cache: Record<string, EmailMessage>) {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem(key, JSON.stringify(cache));
+    } catch (e) {
+      console.warn('[MailService] Cache storage failed (quota exceeded?)', e);
+    }
+  }
+
   async getInbox(email: string): Promise<EmailMessage[]> {
     try {
+      const cacheKey = `dexmail_inbox_${email}`;
+      const cache = this.getCache(cacheKey);
+
       console.log(`[MailService] Fetching inbox for: ${email}`);
-      console.log(`[MailService] Contract address: ${BASEMAILER_ADDRESS}`);
-
-      const { getAccount, getChainId } = await import('@wagmi/core');
-      const account = getAccount(wagmiConfig);
-      const chainId = getChainId(wagmiConfig);
-
-      console.log(`[MailService] Connected account: ${account.address}`);
-      console.log(`[MailService] Chain ID: ${chainId} (Base Sepolia = 84532)`);
 
       const mailIds = await readContract(wagmiConfig, {
         address: BASEMAILER_ADDRESS,
@@ -400,18 +413,25 @@ class MailService {
       }) as bigint[];
 
       console.log(`[MailService] Found ${mailIds.length} mail(s) in inbox`);
-      console.log(`[MailService] Mail IDs:`, mailIds);
 
       if (mailIds.length === 0) {
-        console.log('[MailService] Inbox is empty - no mails indexed yet');
         return [];
       }
 
       const messages: EmailMessage[] = [];
+      let hasNewData = false;
 
       for (const id of mailIds) {
+        const idStr = id.toString();
+
+        // Use cached message if available
+        if (cache[idStr]) {
+          messages.push(cache[idStr]);
+          continue;
+        }
+
         try {
-          console.log(`[MailService] Fetching mail ID: ${id}`);
+          console.log(`[MailService] Fetching new mail ID: ${id}`);
 
           const mail = await readContract(wagmiConfig, {
             address: BASEMAILER_ADDRESS,
@@ -419,8 +439,6 @@ class MailService {
             functionName: 'getMail',
             args: [id]
           }) as any;
-
-          console.log(`[MailService] Mail ${id} - CID: ${mail.cid}, Sender: ${mail.sender}`);
 
           let senderEmail = mail.sender;
           try {
@@ -433,21 +451,18 @@ class MailService {
 
             if (emailFromAddress && emailFromAddress.trim() !== '') {
               senderEmail = emailFromAddress;
-              console.log(`[MailService] Resolved sender address ${mail.sender} to email: ${senderEmail}`);
             }
           } catch (error) {
-            console.warn(`[MailService] Could not resolve email for address ${mail.sender}, using address as fallback`);
+            // Ignore resolution error
           }
 
           const ipfsContent = await this.fetchEmailFromIPFS(mail.cid);
-
           const subject = ipfsContent?.subject || 'Email from blockchain';
           const body = ipfsContent?.body || 'This email was sent via DexMail';
-
           const finalSender = (mail.isExternal && mail.originalSender) ? mail.originalSender : senderEmail;
 
-          messages.push({
-            messageId: id.toString(),
+          const newMessage: EmailMessage = {
+            messageId: idStr,
             from: finalSender,
             to: [mail.recipientEmail],
             subject: subject,
@@ -455,61 +470,55 @@ class MailService {
             timestamp: mail.timestamp.toString(),
             hasCryptoTransfer: mail.hasCrypto,
             ipfsCid: mail.cid
-          });
+          };
+
+          messages.push(newMessage);
+          cache[idStr] = newMessage;
+          hasNewData = true;
+
         } catch (mailError) {
           console.error(`[MailService] Error fetching mail ID ${id}:`, mailError);
         }
       }
 
-      console.log(`[MailService] Successfully fetched ${messages.length} message(s)`);
+      if (hasNewData) {
+        this.setCache(cacheKey, cache);
+        console.log('[MailService] Updated inbox cache');
+      }
+
       return messages.reverse();
     } catch (error: any) {
       if (error?.name === 'ContractFunctionZeroDataError' ||
         error?.cause?.name === 'ContractFunctionZeroDataError' ||
         error?.message?.includes('returned no data')) {
-        console.log('[MailService] Contract returned no data - treating as empty inbox');
-        console.log('[MailService] This could mean:');
-        console.log('  1. No emails have been sent to this address yet');
-        console.log('  2. Wrong network (make sure you are on Base)');
-        console.log('  3. Contract not deployed at this address');
         return [];
       }
-
       console.error('[MailService] Error fetching inbox:', error);
-      console.error('[MailService] Error details:', {
-        name: error?.name,
-        message: error?.message,
-        cause: error?.cause
-      });
       throw error;
     }
   }
 
   async getSent(email: string): Promise<EmailMessage[]> {
     try {
+      const cacheKey = `dexmail_sent_${email}`;
+      const cache = this.getCache(cacheKey);
+
       console.log(`[MailService] Fetching sent emails for: ${email}`);
 
       const { getAccount } = await import('@wagmi/core');
       const account = getAccount(wagmiConfig);
 
-      if (!account.address) {
-        console.log('[MailService] No wallet connected');
-        return [];
-      }
+      if (!account.address) return [];
 
       const { getPublicClient } = await import('@wagmi/core');
       const publicClient = getPublicClient(wagmiConfig);
 
-      if (!publicClient) {
-        console.log('[MailService] No public client available');
-        return [];
-      }
+      if (!publicClient) return [];
 
       const currentBlock = await publicClient.getBlockNumber();
-
+      // Optimization: We could store lastFetchedBlock in cache too, but for now just fetch logs
+      // and filter by what we already have in cache.
       const fromBlock = currentBlock > BigInt(50000) ? currentBlock - BigInt(50000) : BigInt(0);
-
-      console.log(`[MailService] Querying MailSent events from block ${fromBlock} to ${currentBlock}`);
 
       const logs = await publicClient.getLogs({
         address: BASEMAILER_ADDRESS,
@@ -534,13 +543,24 @@ class MailService {
       console.log(`[MailService] Found ${logs.length} sent mail event(s)`);
 
       const messages: EmailMessage[] = [];
+      let hasNewData = false;
 
       for (const log of logs) {
         try {
           const mailId = log.args.mailId as bigint;
+          const idStr = mailId.toString();
+
+          if (cache[idStr]) {
+            messages.push(cache[idStr]);
+            continue;
+          }
+
           const recipient = log.args.recipient as string;
           const cidHash = log.args.cid as string;
 
+          // We don't strictly need to call getMail for sent items if we trust the event log,
+          // but getMail gives us the timestamp which might not be in the event (unless we use block timestamp).
+          // Let's stick to getMail for consistency and timestamp.
           const mail = await readContract(wagmiConfig, {
             address: BASEMAILER_ADDRESS,
             abi: baseMailerAbi,
@@ -549,12 +569,11 @@ class MailService {
           }) as any;
 
           const ipfsContent = await this.fetchEmailFromIPFS(cidHash);
-
           const subject = ipfsContent?.subject || 'Sent Email';
           const body = ipfsContent?.body || '';
 
-          messages.push({
-            messageId: mailId.toString(),
+          const newMessage: EmailMessage = {
+            messageId: idStr,
             from: email,
             to: [recipient],
             subject: subject,
@@ -562,13 +581,22 @@ class MailService {
             timestamp: mail.timestamp.toString(),
             hasCryptoTransfer: mail.hasCrypto,
             ipfsCid: cidHash
-          });
+          };
+
+          messages.push(newMessage);
+          cache[idStr] = newMessage;
+          hasNewData = true;
+
         } catch (mailError) {
           console.error(`[MailService] Error processing sent mail:`, mailError);
         }
       }
 
-      console.log(`[MailService] Successfully fetched ${messages.length} sent message(s)`);
+      if (hasNewData) {
+        this.setCache(cacheKey, cache);
+        console.log('[MailService] Updated sent cache');
+      }
+
       return messages.reverse();
     } catch (error) {
       console.error('[MailService] Error fetching sent emails:', error);

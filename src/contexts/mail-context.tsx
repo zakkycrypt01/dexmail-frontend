@@ -100,6 +100,13 @@ export function MailProvider({ children }: { children: ReactNode }) {
 
     useEffect(() => {
         refreshMails();
+
+        // Poll for new emails every 10 seconds
+        const intervalId = setInterval(() => {
+            refreshMails();
+        }, 10000);
+
+        return () => clearInterval(intervalId);
     }, [isConnected, address, user?.email, statusVersion]);
 
     const getEmailStatus = (messageId: string): EmailStatus => {
