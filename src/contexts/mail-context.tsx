@@ -28,13 +28,13 @@ export function MailProvider({ children }: { children: ReactNode }) {
     const { address, isConnected } = useAccount();
     const { user } = useAuth();
 
-    const refreshMails = async () => {
+    const refreshMails = async (silent = false) => {
         if (!isConnected || !address || !user?.email) {
             setMails([]);
             return;
         }
 
-        setIsLoading(true);
+        if (!silent) setIsLoading(true);
         try {
             // Fetch both inbox and sent emails in parallel
             const [fetchedInbox, fetchedSent] = await Promise.all([
@@ -92,22 +92,30 @@ export function MailProvider({ children }: { children: ReactNode }) {
             setMails([...inboxMails, ...sentMails]);
         } catch (error) {
             console.error('[MailContext] Failed to fetch mails:', error);
-            setMails([]);
+            if (!silent) setMails([]);
         } finally {
-            setIsLoading(false);
+            if (!silent) setIsLoading(false);
         }
     };
 
+    // Effect for account/user changes and polling
     useEffect(() => {
-        refreshMails();
+        refreshMails(false); // Initial load with spinner
 
         // Poll for new emails every 10 seconds
         const intervalId = setInterval(() => {
-            refreshMails();
+            refreshMails(true); // Silent refresh
         }, 10000);
 
         return () => clearInterval(intervalId);
-    }, [isConnected, address, user?.email, statusVersion]);
+    }, [isConnected, address, user?.email]);
+
+    // Effect for status changes (silent refresh)
+    useEffect(() => {
+        if (statusVersion > 0) {
+            refreshMails(true);
+        }
+    }, [statusVersion]);
 
     const getEmailStatus = (messageId: string): EmailStatus => {
         return mailService.getEmailStatus(messageId);
