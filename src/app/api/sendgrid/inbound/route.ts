@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { uploadJSONToIPFS } from '@/lib/pinata';
 import { indexMailOnChain } from '@/server/utils';
+import { simpleParser } from 'mailparser';
 // SendGrid Inbound Parse Webhook handler
 export async function POST(req: NextRequest) {
     // Vercel logs are captured from console.log
@@ -18,23 +19,38 @@ export async function POST(req: NextRequest) {
         const to = formData.get('to') as string;
         const from = formData.get('from') as string;
         const subject = formData.get('subject') as string;
-        const text = formData.get('text') as string;
-        const html = formData.get('html') as string;
+        let text = formData.get('text') as string;
+        let html = formData.get('html') as string;
         const headers = formData.get('headers') as string; // Capture headers
+        const rawEmail = formData.get('email') as string; // Raw email content
 
         log(`Raw From: ${from}`);
         log(`Raw To: ${to}`);
         log(`Raw Subject: ${subject}`);
         log(`Raw Headers: ${headers ? headers.substring(0, 100) : 'null'}...`);
+        log(`Raw Email length: ${rawEmail ? rawEmail.length : 'null'}`);
         const senderIp = formData.get('sender_ip') as string;
         const dkims = formData.get('dkim') as string;
         const spf = formData.get('SPF') as string;
         const envelope = formData.get('envelope') as string;
         const charsets = formData.get('charsets') as string;
-        const email = formData.get('email') as string; // Raw email content if available
+
+        // Fallback: Parse raw email if text/html are missing
+        if (!text && !html && rawEmail) {
+            try {
+                log('Parsing raw email content...');
+                const parsed = await simpleParser(rawEmail);
+                text = parsed.text || '';
+                html = (parsed.html as string) || '';
+                log(`Parsed raw email. Text length: ${text.length}, HTML length: ${html.length}`);
+            } catch (parseError) {
+                console.error('[SendGrid Inbound] Failed to parse raw email:', parseError);
+                log('Failed to parse raw email');
+            }
+        }
 
         log(`Received email from: ${from} to: ${to} subject: ${subject}`);
-        log(`Text length: ${text ? text.length : 'null'}, HTML length: ${html ? html.length : 'null'}`);
+        log(`Final Text length: ${text ? text.length : 'null'}, HTML length: ${html ? html.length : 'null'}`);
         console.log(`[SendGrid Inbound] Received email from ${from} to ${to}`);
 
         // 1. Upload to IPFS
@@ -43,7 +59,7 @@ export async function POST(req: NextRequest) {
             from,
             to: [to], // SendGrid sends 'to' as a string, potentially multiple addresses
             subject,
-            body: text || html, // Prefer text for simplicity, or store both? 
+            body: text || html || 'No content', // Prefer text for simplicity, or store both? 
             // For consistency with existing structure:
             htmlBody: html,
             textBody: text,
