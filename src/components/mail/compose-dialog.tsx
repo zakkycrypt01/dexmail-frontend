@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -49,6 +49,14 @@ export function ComposeDialog({
   const { toast } = useToast();
   const { user } = useAuth();
   const { saveDraft } = useMail();
+
+  const isPlatformRecipient = to.length > 0 && to.split(',').every(email => email.trim().endsWith('@dexmail.app'));
+
+  useEffect(() => {
+    if (!isPlatformRecipient && cryptoEnabled) {
+      setCryptoEnabled(false);
+    }
+  }, [isPlatformRecipient, cryptoEnabled]);
 
   // Load draft if initialData is provided (we'll need to add this prop later if we want to open specific drafts)
   // For now, let's just add the save functionality.
@@ -203,18 +211,29 @@ export function ComposeDialog({
             value={body}
             onChange={(e) => setBody(e.target.value)}
           />
-          <div className="flex items-center space-x-2">
-            <Checkbox
-              id="crypto-enabled"
-              checked={cryptoEnabled}
-              onCheckedChange={(checked) => setCryptoEnabled(Boolean(checked))}
-            />
-            <label
-              htmlFor="crypto-enabled"
-              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-            >
-              Attach Crypto Assets
-            </label>
+          <div className="space-y-2">
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="crypto-enabled"
+                checked={cryptoEnabled}
+                onCheckedChange={(checked) => setCryptoEnabled(Boolean(checked))}
+                disabled={!isPlatformRecipient}
+              />
+              <label
+                htmlFor="crypto-enabled"
+                className={`text-sm font-medium leading-none ${!isPlatformRecipient ? 'text-slate-400 cursor-not-allowed' : 'peer-disabled:cursor-not-allowed peer-disabled:opacity-70'
+                  }`}
+              >
+                Attach Crypto Assets
+              </label>
+            </div>
+            {!isPlatformRecipient && to.length > 0 && (
+              <p className="text-xs text-amber-600 ml-6">
+                Crypto attachments are currently only available for @dexmail.app recipients.
+                <br />
+                <span className="opacity-75">Cross-Platform transfers coming soon.</span>
+              </p>
+            )}
           </div>
           {cryptoEnabled && (
             <CryptoAttachment assets={assets} onChange={setAssets} />

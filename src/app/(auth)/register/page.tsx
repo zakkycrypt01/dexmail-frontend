@@ -37,7 +37,7 @@ export default function RegisterPage() {
     generateEmailFromBasename
   } = useBasename();
 
-  const [useWalletAuth, setUseWalletAuth] = useState(false);
+  const [useWalletAuth, setUseWalletAuth] = useState(true);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -212,8 +212,12 @@ export default function RegisterPage() {
 
         <div className="space-y-4">
           {!useWalletAuth ? (
-            // Traditional Registration
-            <>
+            // Traditional Registration - DISABLED/COMING SOON
+            <div className="p-4 bg-slate-100 rounded-xl border border-slate-200 text-center">
+              <p className="text-sm font-medium text-slate-600">
+                Coming soon feature under development
+              </p>
+              {/*
               <div className="text-left space-y-2">
                 <Label htmlFor="name" className="text-slate-700 font-medium">
                   Full Name
@@ -273,7 +277,8 @@ export default function RegisterPage() {
                   required
                 />
               </div>
-            </>
+              */}
+            </div>
           ) : (
             // Wallet Registration
             <div className="space-y-4">
@@ -428,7 +433,7 @@ export default function RegisterPage() {
           )}
         </div>
 
-        {/* Create Account Button (for traditional registration only) */}
+        {/* Create Account Button (for traditional registration only) - HIDDEN/COMMENTED 
         {!useWalletAuth && (
           <div className="space-y-4">
             <Button
@@ -454,6 +459,7 @@ export default function RegisterPage() {
             </div>
           </div>
         )}
+        */}
 
         {/* Sign in link for wallet users */}
         {useWalletAuth && !authComplete && (

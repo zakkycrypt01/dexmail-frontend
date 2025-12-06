@@ -13,7 +13,8 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { nftService } from '@/lib/nft-service';
 import { X, Loader2 } from 'lucide-react';
-import { useAccount } from 'wagmi';
+import { useAccount, useBalance } from 'wagmi';
+import { useToast } from '@/hooks/use-toast';
 import { useQuery } from '@tanstack/react-query';
 import { tokenService } from '@/lib/token-service';
 
@@ -32,6 +33,8 @@ type CryptoAttachmentProps = {
 
 export function CryptoAttachment({ assets, onChange }: CryptoAttachmentProps) {
   const { address } = useAccount();
+  const { toast } = useToast();
+  const { data: ethBalance } = useBalance({ address });
   const [assetType, setAssetType] = useState('erc20');
   const [selectedTokenId, setSelectedTokenId] = useState('');
   const [selectedNftId, setSelectedNftId] = useState('');
@@ -63,6 +66,15 @@ export function CryptoAttachment({ assets, onChange }: CryptoAttachmentProps) {
     if (assetType === 'erc20' && amount && selectedTokenId) {
       const token = tokens.find(t => t.id === selectedTokenId);
       if (token) {
+        if (parseFloat(amount) > parseFloat(token.balance)) {
+          toast({
+            title: "Insufficient Balance",
+            description: `You only have ${parseFloat(token.balance).toFixed(4)} ${token.symbol}.`,
+            variant: "destructive",
+          });
+          return;
+        }
+
         onChange([...assets, {
           type: 'erc20',
           symbol: token.symbol,
@@ -73,6 +85,15 @@ export function CryptoAttachment({ assets, onChange }: CryptoAttachmentProps) {
         setSelectedTokenId('');
       }
     } else if (assetType === 'eth' && amount) {
+      if (ethBalance && parseFloat(amount) > parseFloat(ethBalance.formatted)) {
+        toast({
+          title: "Insufficient Balance",
+          description: `You only have ${parseFloat(ethBalance.formatted).toFixed(4)} ETH.`,
+          variant: "destructive",
+        });
+        return;
+      }
+
       onChange([...assets, { type: 'eth', symbol: 'ETH', amount }]);
       setAmount('');
     } else if (assetType === 'nft' && selectedNftId) {

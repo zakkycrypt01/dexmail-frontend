@@ -30,7 +30,7 @@ export default function LoginPage() {
     signMessage
   } = useWallet();
 
-  const [useWalletAuth, setUseWalletAuth] = useState(false);
+  const [useWalletAuth, setUseWalletAuth] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -203,9 +203,13 @@ export default function LoginPage() {
           </div>
 
           {!useWalletAuth ? (
-            // Traditional Password Login
-            <>
-              <div className="text-left space-y-2">
+            // Traditional Password Login - DISABLED/COMING SOON
+            <div className="p-4 bg-slate-100 rounded-xl border border-slate-200 text-center">
+              <p className="text-sm font-medium text-slate-600">
+                Coming soon feature under development
+              </p>
+              {/* 
+              <div className="text-left space-y-2 mt-4 opacity-50 pointer-events-none">
                 <Label htmlFor="password" className="text-slate-700 font-medium">
                   Password
                 </Label>
@@ -219,7 +223,8 @@ export default function LoginPage() {
                   required
                 />
               </div>
-            </>
+              */}
+            </div>
           ) : (
             // Wallet Signature Authentication
             <div className="space-y-4">
@@ -332,7 +337,7 @@ export default function LoginPage() {
           )}
         </div>
 
-        {/* Sign In Button (for traditional login only) */}
+        {/* Sign In Button (for traditional login only) - HIDDEN/COMMENTED 
         {!useWalletAuth && (
           <div className="space-y-4">
             <Button
@@ -358,6 +363,7 @@ export default function LoginPage() {
             </div>
           </div>
         )}
+        */}
 
         {/* Sign up link for wallet users */}
         {!useWalletAuth && !authComplete && (
