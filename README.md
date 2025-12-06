@@ -7,11 +7,12 @@ A revolutionary decentralized email platform that combines traditional email fun
 ### Core Email Functionality
 - **Decentralized Email System**: Messages stored on IPFS with blockchain indexing
 - **Traditional Email Compatibility**: Send/receive emails from Gmail, Outlook, and other providers
-- **Dual Authentication**: Support for both wallet signatures and traditional email/password login
+- **Wallet-First Authentication**: Primary login via wallet signature (Traditional email/password login coming soon)
 - **Full Email Client**: Inbox, sent items, compose, and message management
 
 ### Crypto Transfer Capabilities
-- **Send Crypto via Email**: Transfer ETH, ERC20 tokens, and NFTs to any email address
+- **Send Crypto via Email**: Transfer ETH, ERC20 tokens, and NFTs to other DexMail users
+- **Cross-Platform Transfers**: (Coming Soon) Transfer to non-DexMail addresses with claim link generation
 - **No Wallet Required**: Recipients can claim crypto without an existing wallet
 - **Smart Contract Wallets**: Automatic deterministic wallet generation for email addresses
 - **Gas-Sponsored Claims**: Optional gasless transactions for recipients
@@ -20,6 +21,7 @@ A revolutionary decentralized email platform that combines traditional email fun
   - ERC20 tokens (USDC, USDT, DAI, etc.)
   - ERC721 NFTs
   - Batch transfers
+  - **Balance Guard**: Built-in validation prevents sending more than you own
 
 ### User Experience
 - **One-Click Onboarding**: Recipients claim crypto and create wallets in one step
@@ -52,32 +54,51 @@ A revolutionary decentralized email platform that combines traditional email fun
 ## 📁 Project Structure
 
 ```
-src/
-├── app/                    # Next.js app router pages
-│   ├── (auth)/            # Authentication page (login, register)
-│   ├── (dashboard)/       # Main app pages (inbox, sent, compose)
-│   └── claim/             # Crypto claim flow
-├── components/            # React components
-│   ├── mail/             # Email-specific components
-│   ├── ui/               # Reusable UI components (Radix-based)
-│   └── user-nav.tsx      # User navigation
-├── contexts/             # React contexts
-│   ├── auth-context.tsx  # Authentication state
-│   └── mail-context.tsx  # Email data management
-├── hooks/                # Custom React hooks
-│   ├── use-wallet.ts     # Wallet connection logic
-│   └── use-toast.ts      # Toast notifications
-├── lib/                  # Core utilities and services
-│   ├── services/         # API service layer
-│   │   ├── mail-service.ts
-│   │   ├── crypto-service.ts
-│   │   ├── wallet-service.ts
-│   │   ├── nft-service.ts
-│   │   └── claim-service.ts
-│   ├── types.ts          # TypeScript type definitions
-│   └── utils.ts          # Utility functions
-├── contracts/            # Smart contract ABIs and addresses
-└── server/               # Backend server (optional SMTP/IMAP)
+DexMail-frontend/
+├── contracts/            # Smart contract files
+│   ├── BaseMailer.sol    # Core protocol contract
+│   ├── TrustedRelayer.sol # Relayer logic
+│   └── abi.ts            # Generated ABIs
+├── docs/                 # Documentation
+│   ├── blueprint.md
+│   └── frontend-services.md
+├── public/               # Static assets
+│   ├── illustrations/    # Onboarding & Auth SVGs
+│   └── ...
+├── scripts/              # Utility & Test scripts
+│   ├── generate-wallet.ts
+│   └── test-outbound-email.ts
+├── src/
+│   ├── app/                    # Next.js app router pages
+│   │   ├── (auth)/            # Authentication (login/register)
+│   │   ├── dashboard/         # Main app interface
+│   │   │   ├── inbox/
+│   │   │   ├── sent/
+│   │   │   ├── drafts/
+│   │   │   └── profile/
+│   │   ├── onboarding/        # New user flow
+│   │   └── api/               # Backend API routes
+│   │       ├── auth/          # Auth endpoints
+│   │       ├── email/         # Email & Drafts management
+│   │       ├── tokens/        # Token fetching
+│   │       └── wallet/        # Wallet operations
+│   ├── components/            # React components
+│   │   ├── mail/             # Email-specific (Compose, List, Display)
+│   │   ├── ui/               # Reusable UI primitives
+│   │   └── providers/        # Context providers wrapper
+│   ├── contexts/             # React contexts
+│   │   ├── auth-context.tsx  # Auth state
+│   │   └── mail-context.tsx  # Email data & actions
+│   ├── hooks/                # Custom hooks (useWallet, useTable)
+│   ├── lib/                  # Utilities & Services
+│   │   ├── models/           # Mongoose schemas
+│   │   ├── services/         # API integations (mail, nft, token)
+│   │   └── utils.ts          # Helpers
+│   └── types/                # TypeScript definitions
+├── next.config.ts        # Next.js configuration
+├── tailwind.config.ts    # Tailwind CSS configuration
+├── tsconfig.json         # TypeScript configuration
+└── README.md             # Project documentation
 ```
 
 ## 🚀 Getting Started
@@ -151,6 +172,7 @@ npm start
 ## 📖 Usage Guide
 
 ### Sending an Email with Crypto
+> **Note:** Currently, crypto attachments are only supported when sending to other `@dexmail.app` addresses. Cross-platform transfers are coming soon.
 
 #### Method 1: Using Email Content Markers
 ```
@@ -166,7 +188,7 @@ Alice
 
 #### Method 2: Using the Compose UI
 1. Click "Compose" in the dashboard
-2. Fill in recipient, subject, and message
+2. Fill in recipient (must be `@dexmail.app`), subject, and message
 3. Click "Attach Crypto"
 4. Select token type and amount
 5. Approve the transaction in your wallet
@@ -182,16 +204,15 @@ Alice
 
 ### Wallet Authentication
 
-#### Connect Wallet
+#### Connect Wallet (Default)
 1. Click "Connect Wallet" on the login page
 2. Select your wallet provider (MetaMask, Coinbase, etc.)
 3. Sign the authentication message
 4. Access your account
 
-#### Traditional Login
-1. Enter email and password
-2. Click "Login"
-3. Optionally link a wallet later for crypto features
+#### Traditional Login (Coming Soon)
+1. Feature currently under development
+2. will support email/password login with optional wallet linking
 
 ## 🔧 Development
 
