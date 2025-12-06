@@ -45,10 +45,14 @@ export function MailProvider({ children }: { children: ReactNode }) {
 
         if (!silent) setIsLoading(true);
         try {
+            // Initialize status cache
+            await mailService.initializeStatusCache(user.email);
+
             // Fetch both inbox and sent emails in parallel
-            const [fetchedInbox, fetchedSent] = await Promise.all([
+            const [fetchedInbox, fetchedSent, fetchedDrafts] = await Promise.all([
                 mailService.getInbox(user.email),
-                mailService.getSent(user.email)
+                mailService.getSent(user.email),
+                mailService.getDrafts(user.email)
             ]);
 
             // Map inbox emails
@@ -102,8 +106,7 @@ export function MailProvider({ children }: { children: ReactNode }) {
             let allMails = [...inboxMails, ...sentMails];
 
             // Fetch drafts
-            const drafts = mailService.getDrafts();
-            const draftMails: Mail[] = drafts.map(d => ({
+            const draftMails: Mail[] = fetchedDrafts.map(d => ({
                 id: d.id,
                 name: '(Draft)',
                 email: d.to,
@@ -128,7 +131,9 @@ export function MailProvider({ children }: { children: ReactNode }) {
 
     // Effect for account/user changes and polling
     useEffect(() => {
-        mailService.cleanupTrash(); // Auto-delete old trash
+        if (user?.email) {
+            mailService.cleanupTrash(user.email); // Auto-delete old trash
+        }
         refreshMails(false); // Initial load with spinner
 
         // Poll for new emails every 10 seconds
@@ -151,95 +156,127 @@ export function MailProvider({ children }: { children: ReactNode }) {
     };
 
     const updateEmailStatus = (messageId: string, status: Partial<EmailStatus>) => {
-        mailService.updateEmailStatus(messageId, status);
-        setStatusVersion(v => v + 1);
+        if (user?.email) {
+            mailService.updateEmailStatus(messageId, status, user.email);
+            setStatusVersion(v => v + 1);
+        }
     };
 
     const markAsRead = (messageId: string) => {
-        mailService.markAsRead(messageId);
-        setStatusVersion(v => v + 1);
+        if (user?.email) {
+            mailService.markAsRead(messageId, user.email);
+            setStatusVersion(v => v + 1);
+        }
     };
 
     const markAsUnread = (messageId: string) => {
-        mailService.markAsUnread(messageId);
-        setStatusVersion(v => v + 1);
+        if (user?.email) {
+            mailService.markAsUnread(messageId, user.email);
+            setStatusVersion(v => v + 1);
+        }
     };
 
     const moveToSpam = (messageId: string) => {
-        mailService.moveToSpam(messageId);
-        setStatusVersion(v => v + 1);
+        if (user?.email) {
+            mailService.moveToSpam(messageId, user.email);
+            setStatusVersion(v => v + 1);
+        }
     };
 
     const moveToArchive = (messageId: string) => {
-        mailService.moveToArchive(messageId);
-        setStatusVersion(v => v + 1);
+        if (user?.email) {
+            mailService.moveToArchive(messageId, user.email);
+            setStatusVersion(v => v + 1);
+        }
     };
 
     const moveToTrash = (messageId: string) => {
+        if (!user?.email) return;
+
         const mail = mails.find(m => m.id === messageId);
         if (mail?.status === 'draft') {
-            mailService.deleteDraft(messageId);
+            mailService.deleteDraft(messageId, user.email);
         } else {
-            mailService.moveToTrash(messageId);
+            mailService.moveToTrash(messageId, user.email);
         }
         setStatusVersion(v => v + 1);
     };
 
     const restoreFromTrash = (messageId: string) => {
-        mailService.restoreFromTrash(messageId);
-        setStatusVersion(v => v + 1);
+        if (user?.email) {
+            mailService.restoreFromTrash(messageId, user.email);
+            setStatusVersion(v => v + 1);
+        }
     };
 
     const addLabel = (messageId: string, label: string) => {
-        mailService.addLabel(messageId, label);
-        setStatusVersion(v => v + 1);
+        if (user?.email) {
+            mailService.addLabel(messageId, label, user.email);
+            setStatusVersion(v => v + 1);
+        }
     };
 
     const removeLabel = (messageId: string, label: string) => {
-        mailService.removeLabel(messageId, label);
-        setStatusVersion(v => v + 1);
+        if (user?.email) {
+            mailService.removeLabel(messageId, label, user.email);
+            setStatusVersion(v => v + 1);
+        }
     };
 
     const deleteMails = (messageIds: string[]) => {
+        if (!user?.email) return;
+
         messageIds.forEach(id => {
             const mail = mails.find(m => m.id === id);
             if (mail?.status === 'draft') {
-                mailService.deleteDraft(id);
+                mailService.deleteDraft(id, user.email);
             } else {
-                mailService.moveToTrash(id);
+                mailService.moveToTrash(id, user.email);
             }
         });
         setStatusVersion(v => v + 1);
     };
 
     const archiveMails = (messageIds: string[]) => {
-        messageIds.forEach(id => mailService.moveToArchive(id));
-        setStatusVersion(v => v + 1);
+        if (user?.email) {
+            messageIds.forEach(id => mailService.moveToArchive(id, user.email));
+            setStatusVersion(v => v + 1);
+        }
     };
 
     const spamMails = (messageIds: string[]) => {
-        messageIds.forEach(id => mailService.moveToSpam(id));
-        setStatusVersion(v => v + 1);
+        if (user?.email) {
+            messageIds.forEach(id => mailService.moveToSpam(id, user.email));
+            setStatusVersion(v => v + 1);
+        }
     };
 
     const addLabelToMails = (messageIds: string[], label: string) => {
-        messageIds.forEach(id => mailService.addLabel(id, label));
-        setStatusVersion(v => v + 1);
+        if (user?.email) {
+            messageIds.forEach(id => mailService.addLabel(id, label, user.email));
+            setStatusVersion(v => v + 1);
+        }
     };
 
     const removeLabelFromMails = (messageIds: string[], label: string) => {
-        messageIds.forEach(id => mailService.removeLabel(id, label));
-        setStatusVersion(v => v + 1);
+        if (user?.email) {
+            messageIds.forEach(id => mailService.removeLabel(id, label, user.email));
+            setStatusVersion(v => v + 1);
+        }
     };
 
     const saveDraft = (draft: DraftEmail) => {
-        mailService.saveDraft(draft);
-        setStatusVersion(v => v + 1);
+        if (user?.email) {
+            mailService.saveDraft(draft, user.email);
+            setStatusVersion(v => v + 1);
+        }
     };
 
     const deleteDraft = (id: string) => {
-        mailService.deleteDraft(id);
-        setStatusVersion(v => v + 1);
+        if (user?.email) {
+            mailService.deleteDraft(id, user.email);
+            setStatusVersion(v => v + 1);
+        }
     };
 
     return (

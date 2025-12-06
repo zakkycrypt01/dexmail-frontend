@@ -639,20 +639,25 @@ class MailService {
     return { success: true, messageId };
   }
 
-  private getStatusMap(): Record<string, EmailStatus> {
-    if (typeof window === 'undefined') return {};
-    const stored = localStorage.getItem(EMAIL_STATUS_KEY);
-    return stored ? JSON.parse(stored) : {};
-  }
+  // In-memory cache for status to avoid frequent API calls
+  private statusCache: Record<string, EmailStatus> = {};
+  private hasInitializedCache = false;
 
-  private saveStatusMap(statusMap: Record<string, EmailStatus>): void {
-    if (typeof window === 'undefined') return;
-    localStorage.setItem(EMAIL_STATUS_KEY, JSON.stringify(statusMap));
+  async initializeStatusCache(address: string): Promise<void> {
+    if (this.hasInitializedCache) return;
+    try {
+      const response = await fetch(`/api/email/status?address=${address}`);
+      if (response.ok) {
+        this.statusCache = await response.json();
+        this.hasInitializedCache = true;
+      }
+    } catch (error) {
+      console.error('Failed to initialize status cache:', error);
+    }
   }
 
   getEmailStatus(messageId: string): EmailStatus {
-    const statusMap = this.getStatusMap();
-    return statusMap[messageId] || {
+    return this.statusCache[messageId] || {
       read: false,
       spam: false,
       archived: false,
@@ -662,111 +667,133 @@ class MailService {
     };
   }
 
-  updateEmailStatus(messageId: string, status: Partial<EmailStatus>): void {
-    const statusMap = this.getStatusMap();
+  async updateEmailStatus(messageId: string, status: Partial<EmailStatus>, address?: string): Promise<void> {
     const currentStatus = this.getEmailStatus(messageId);
-    statusMap[messageId] = { ...currentStatus, ...status };
-    this.saveStatusMap(statusMap);
-  }
+    const newStatus = { ...currentStatus, ...status };
+    this.statusCache[messageId] = newStatus;
 
-  markAsRead(messageId: string): void {
-    this.updateEmailStatus(messageId, { read: true });
-  }
-
-  markAsUnread(messageId: string): void {
-    this.updateEmailStatus(messageId, { read: false });
-  }
-
-  moveToSpam(messageId: string): void {
-    this.updateEmailStatus(messageId, { spam: true, archived: false, deleted: false });
-  }
-
-  removeFromSpam(messageId: string): void {
-    this.updateEmailStatus(messageId, { spam: false });
-  }
-
-  moveToArchive(messageId: string): void {
-    this.updateEmailStatus(messageId, { archived: true, spam: false, deleted: false });
-  }
-
-  removeFromArchive(messageId: string): void {
-    this.updateEmailStatus(messageId, { archived: false });
-  }
-
-  moveToTrash(messageId: string): void {
-    this.updateEmailStatus(messageId, { deleted: true, spam: false, archived: false, deletedAt: Date.now() });
-  }
-
-  restoreFromTrash(messageId: string): void {
-    this.updateEmailStatus(messageId, { deleted: false });
-  }
-
-  markAsDraft(messageId: string): void {
-    this.updateEmailStatus(messageId, { draft: true });
-  }
-  removeDraftStatus(messageId: string): void {
-    this.updateEmailStatus(messageId, { draft: false });
-  }
-
-  addLabel(messageId: string, label: string): void {
-    const currentStatus = this.getEmailStatus(messageId);
-    const labels = currentStatus.labels || [];
-    if (!labels.includes(label)) {
-      this.updateEmailStatus(messageId, { labels: [...labels, label] });
+    if (address) {
+      try {
+        // Optimistic update done in cache, sync to server in background
+        fetch('/api/email/status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ messageId, status: newStatus, address })
+        }).catch(err => console.error('Failed to sync status update:', err));
+      } catch (e) {
+        console.error('Error triggering status update:', e);
+      }
     }
   }
 
-  cleanupTrash(): void {
-    const statusMap = this.getStatusMap();
+  markAsRead(messageId: string, address: string): void {
+    this.updateEmailStatus(messageId, { read: true }, address);
+  }
+
+  markAsUnread(messageId: string, address: string): void {
+    this.updateEmailStatus(messageId, { read: false }, address);
+  }
+
+  moveToSpam(messageId: string, address: string): void {
+    this.updateEmailStatus(messageId, { spam: true, archived: false, deleted: false }, address);
+  }
+
+  removeFromSpam(messageId: string, address: string): void {
+    this.updateEmailStatus(messageId, { spam: false }, address);
+  }
+
+  moveToArchive(messageId: string, address: string): void {
+    this.updateEmailStatus(messageId, { archived: true, spam: false, deleted: false }, address);
+  }
+
+  removeFromArchive(messageId: string, address: string): void {
+    this.updateEmailStatus(messageId, { archived: false }, address);
+  }
+
+  moveToTrash(messageId: string, address: string): void {
+    this.updateEmailStatus(messageId, { deleted: true, spam: false, archived: false, deletedAt: Date.now() }, address);
+  }
+
+  restoreFromTrash(messageId: string, address: string): void {
+    this.updateEmailStatus(messageId, { deleted: false }, address);
+  }
+
+  markAsDraft(messageId: string, address: string): void {
+    this.updateEmailStatus(messageId, { draft: true }, address);
+  }
+  removeDraftStatus(messageId: string, address: string): void {
+    this.updateEmailStatus(messageId, { draft: false }, address);
+  }
+
+  addLabel(messageId: string, label: string, address: string): void {
+    const currentStatus = this.getEmailStatus(messageId);
+    const labels = currentStatus.labels || [];
+    if (!labels.includes(label)) {
+      this.updateEmailStatus(messageId, { labels: [...labels, label] }, address);
+    }
+  }
+
+  cleanupTrash(address: string): void {
+    const statusMap = this.statusCache;
     const now = Date.now();
     const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
-    let changed = false;
 
     Object.keys(statusMap).forEach(id => {
       const status = statusMap[id];
       if (status.deleted && status.deletedAt && (now - status.deletedAt > THIRTY_DAYS_MS)) {
-        statusMap[id] = { ...status, purged: true };
-        changed = true;
+        this.updateEmailStatus(id, { purged: true }, address);
       }
     });
-
-    if (changed) {
-      this.saveStatusMap(statusMap);
-    }
   }
 
   // Drafts
-  private getDraftsMap(): Record<string, DraftEmail> {
-    if (typeof window === 'undefined') return {};
-    return JSON.parse(localStorage.getItem('dexmail_drafts') || '{}');
+  async getDrafts(address: string): Promise<DraftEmail[]> {
+    if (!address) return [];
+    try {
+      const response = await fetch(`/api/email/drafts?address=${address}`);
+      if (!response.ok) return [];
+      const drafts = await response.json();
+      return drafts.map((d: any) => ({
+        id: d.draftId,
+        to: d.to,
+        subject: d.subject,
+        body: d.body,
+        timestamp: d.timestamp
+      }));
+    } catch (error) {
+      console.error('Failed to fetch drafts:', error);
+      return [];
+    }
   }
 
-  private saveDraftsMap(map: Record<string, DraftEmail>) {
-    if (typeof window === 'undefined') return;
-    localStorage.setItem('dexmail_drafts', JSON.stringify(map));
+  async saveDraft(draft: DraftEmail, address: string): Promise<void> {
+    if (!address) return;
+    try {
+      await fetch('/api/email/drafts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...draft, address })
+      });
+    } catch (error) {
+      console.error('Failed to save draft:', error);
+    }
   }
 
-  saveDraft(draft: DraftEmail): void {
-    const map = this.getDraftsMap();
-    map[draft.id] = draft;
-    this.saveDraftsMap(map);
+  async deleteDraft(id: string, address: string): Promise<void> {
+    if (!address) return;
+    try {
+      await fetch(`/api/email/drafts?id=${id}&address=${address}`, {
+        method: 'DELETE'
+      });
+    } catch (error) {
+      console.error('Failed to delete draft:', error);
+    }
   }
 
-  getDrafts(): DraftEmail[] {
-    const map = this.getDraftsMap();
-    return Object.values(map).sort((a, b) => b.timestamp - a.timestamp);
-  }
-
-  deleteDraft(id: string): void {
-    const map = this.getDraftsMap();
-    delete map[id];
-    this.saveDraftsMap(map);
-  }
-
-  removeLabel(messageId: string, label: string): void {
+  removeLabel(messageId: string, label: string, address: string): void {
     const currentStatus = this.getEmailStatus(messageId);
     const labels = currentStatus.labels || [];
-    this.updateEmailStatus(messageId, { labels: labels.filter(l => l !== label) });
+    this.updateEmailStatus(messageId, { labels: labels.filter(l => l !== label) }, address);
   }
 }
 
