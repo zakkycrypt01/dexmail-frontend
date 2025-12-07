@@ -195,7 +195,7 @@ export default function LoginPage() {
               id="email"
               type="email"
               placeholder="Enter your email"
-              className="h-12 bg-white border-slate-200 rounded-xl focus:border-slate-400 focus:ring-slate-400 text-black"
+              className="h-12 bg-white border-slate-200 rounded-xl focus:border-slate-400 focus:ring-slate-400 text-slate-900 placeholder:text-slate-500"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -289,7 +289,7 @@ export default function LoginPage() {
                     </p>
                     <Button
                       onClick={handleWalletAuth}
-                      disabled={isSigning || isAuthenticating || !email.trim()}
+                      disabled={isSigning || isAuthenticating || !email.trim() || !email.endsWith('@dexmail.app')}
                       className="w-full h-12 bg-brand-blue hover:bg-brand-blue-hover text-white font-semibold rounded-full"
                     >
                       {isSigning ? (
@@ -306,8 +306,12 @@ export default function LoginPage() {
                         'Sign to Login'
                       )}
                     </Button>
-                    {!email.trim() && (
-                      <p className="text-xs text-amber-600 mt-2">Please enter your email address first</p>
+                    {(!email.trim() || (email.trim() && !email.endsWith('@dexmail.app'))) && (
+                      <p className="text-xs text-amber-600 mt-2">
+                        {!email.trim()
+                          ? "Please enter your email address first"
+                          : "Email must end with @dexmail.app"}
+                      </p>
                     )}
                   </div>
                 </div>

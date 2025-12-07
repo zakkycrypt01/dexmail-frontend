@@ -47,6 +47,111 @@ interface MailDisplayProps {
   onNavigateToMail?: (mailId: string) => void;
 }
 
+interface ThreadMessage {
+  id: string;
+  senderName: string;
+  senderEmail: string;
+  date: Date;
+  content: string;
+  isLatest: boolean;
+  avatarSeed: string;
+}
+
+function parseEmailThread(mail: Mail): ThreadMessage[] {
+  const messages: ThreadMessage[] = [];
+
+  // 1. Initial message (the latest one)
+  const latestMessage: ThreadMessage = {
+    id: mail.id,
+    senderName: mail.name,
+    senderEmail: mail.email,
+    date: new Date(mail.date),
+    content: '', // Will be filled
+    isLatest: true,
+    avatarSeed: mail.name || mail.email
+  };
+
+  // Split body by "On ... wrote:" pattern
+  // Regex to capture: \nOn (Date), (Sender) wrote:\n
+  // We need to be careful with capturing groups to extract info if possible, 
+  // currently just splitting to separate content.
+  // A heuristic approach:
+  // The email body usually looks like:
+  // "New content...\n\nOn Mon, Jan 1, 2024 at 10:00 AM, John Doe <john@example.com> wrote:\n> Old content..."
+
+  const threadParts = mail.body.split(/\nOn\s+(.*?)\s+wrote:\n/);
+
+  // threadParts[0] is the latest message content
+  latestMessage.content = threadParts[0].trim();
+  messages.push(latestMessage);
+
+  // Subsequent parts come in pairs: [Header Info, Content] due to the capturing group in split
+  // However, `split` with capturing group includes the separator.
+  // "A".split(/(B)/) -> ["A"] if no match, or ["Part1", "B", "Part2"]
+
+  // Let's iterate from index 1
+  for (let i = 1; i < threadParts.length; i += 2) {
+    const headerInfo = threadParts[i]; // The "Mon, Jan 1..." part
+    let content = threadParts[i + 1]; // The content part
+
+    if (!content) continue;
+
+    // Content will have > at start of lines, remove them
+    content = content.replace(/^>\s?/gm, '').trim();
+
+    // Check if this content itself has another "On... wrote:" inside it that wasn't caught?
+    // The regex should catch global matches if used with split? 
+    // String.prototype.split with regex splits on all occurrences.
+    // So threadParts should be flattening the nested structure into a list.
+
+    // Try to extract sender/date from headerInfo
+    // headerInfo is like "Mon, Dec 4, 2023 at 5:00 PM, John Doe <john@example.com>"
+    // or "Mon, Dec 4, 2023 at 5:00 PM, John Doe"
+
+    let senderName = "Unknown";
+    let senderEmail = "";
+    let dateStr = "";
+
+    // Naive extraction
+    const emailMatch = headerInfo.match(/<(.*?)>/);
+    if (emailMatch) {
+      senderEmail = emailMatch[1];
+      senderName = headerInfo.substring(headerInfo.lastIndexOf(',', headerInfo.indexOf('<')) + 1, headerInfo.indexOf('<')).trim();
+      // If name is found empty, try separation by comma
+      if (!senderName) {
+        // This logic is fragile, but sufficient for visual MVP
+        const parts = headerInfo.split(',');
+        senderName = parts[parts.length - 1].split('<')[0].trim();
+      }
+      dateStr = headerInfo.substring(0, headerInfo.indexOf(senderName) || headerInfo.length).trim();
+      // Cleanup trailing comma
+      if (dateStr.endsWith(',')) dateStr = dateStr.slice(0, -1);
+
+    } else {
+      // No email brackets, maybe just name
+      const parts = headerInfo.split(',');
+      if (parts.length > 2) {
+        senderName = parts[parts.length - 1].trim();
+        dateStr = parts.slice(0, parts.length - 1).join(',').trim();
+      } else {
+        dateStr = headerInfo;
+      }
+    }
+
+    messages.push({
+      id: `${mail.id}-history-${i}`,
+      senderName: senderName || "Previous Sender",
+      senderEmail: senderEmail,
+      date: new Date(dateStr) || new Date(), // Fallback if parsing fails
+      content: content,
+      isLatest: false,
+      avatarSeed: senderName || senderEmail || `user-${i}`
+    });
+  }
+
+  return messages;
+}
+
 export function MailDisplay({ mail, onBack, onNavigateToMail }: MailDisplayProps) {
   const isMobile = useIsMobile();
   const { markAsRead, markAsUnread, moveToArchive, moveToSpam, moveToTrash, restoreFromTrash, getEmailStatus } = useMail();
@@ -343,79 +448,63 @@ export function MailDisplay({ mail, onBack, onNavigateToMail }: MailDisplayProps
         )}
 
         {mail && (
-          <div className="flex-1 p-4 pt-0 text-sm space-y-4">
+          <div className="flex-1 p-4 pt-0 space-y-6">
             {(() => {
-              // Parsing Logic
-              const lines = mail.body.split('\n');
-              const segments: { type: 'text' | 'quote'; content: string[] }[] = [];
-              let currentSegment: { type: 'text' | 'quote'; content: string[] } = { type: 'text', content: [] };
+              const threadMessages = parseEmailThread(mail);
 
-              lines.forEach((line) => {
-                const isQuote = line.trim().startsWith('>') || line.trim().startsWith('On ') && line.includes('wrote:');
+              // Sort chronological: Oldest first
+              // Since we parsed from Latest to Oldest (top down in email body usually implies Latest -> History), 
+              // we probably need to reverse.
+              // Logic check: 
+              // Top of email body = Latest message.
+              // "On composed..." = The message before that.
+              // So threadParts[0] is latest. threadParts[1/2] is previous.
+              // So `messages` array is [Latest, Previous, Pre-previous...]
+              // We want to display: Pre-previous -> Previous -> Latest (Chat style)
 
-                // Heuristic: "On ... wrote:" often starts a quote block even without >
-                // But for simplicity and safety, let's mainly rely on >.
-                // If we switch types, push current and start new.
-                // Exception: If we are in 'text' mode and see a quote indicator, switch.
-                // If in 'quote' mode, we tend to stay in quote mode unless it's clearly a new disjoint block? 
-                // Actually, standard email replies are usually:
-                // New Text
-                // > Old Text
-                // 
-                // So we just check if line starts with >
+              const chronologicalMessages = [...threadMessages].reverse();
 
-                const lineIsQuote = line.trim().startsWith('>');
+              return chronologicalMessages.map((msg, index) => {
+                // For valid dates?
+                const isValidDate = !isNaN(msg.date.getTime());
+                const dateDisplay = isValidDate ? format(msg.date, "MMM d, yyyy, h:mm a") : "Unknown Date";
 
-                if (lineIsQuote) {
-                  if (currentSegment.type !== 'quote') {
-                    if (currentSegment.content.length > 0) segments.push(currentSegment);
-                    currentSegment = { type: 'quote', content: [] };
-                  }
-                  currentSegment.content.push(line.replace(/^>\s?/, '')); // Remove the > marker
-                } else {
-                  // Check for "On ... wrote:" header which usually precedes quotes
-                  if (line.trim().startsWith('On ') && line.endsWith('wrote:')) {
-                    if (currentSegment.type !== 'quote') {
-                      if (currentSegment.content.length > 0) segments.push(currentSegment);
-                      currentSegment = { type: 'quote', content: [] };
-                    }
-                    currentSegment.content.push(line);
-                  } else {
-                    if (currentSegment.type === 'quote') {
-                      // If we were in a quote but find a blank line, it might just be spacing in the quote.
-                      // But if it's text, it's ambiguous. Standard clients indent everything.
-                      // Let's assume if it doesn't start with >, it's text, UNLESS the previous line was a quote and this is empty.
-                      if (line.trim() === '') {
-                        currentSegment.content.push(line);
-                      } else {
-                        // Break out of quote
-                        if (currentSegment.content.length > 0) segments.push(currentSegment);
-                        currentSegment = { type: 'text', content: [] };
-                        currentSegment.content.push(line);
-                      }
-                    } else {
-                      currentSegment.content.push(line);
-                    }
-                  }
-                }
+                return (
+                  <div key={msg.id} className={cn(
+                    "flex flex-col gap-2 rounded-xl border p-4 shadow-sm",
+                    msg.isLatest ? "bg-card text-card-foreground border-slate-200" : "bg-muted/30 border-transparent"
+                  )}>
+                    {/* Header */}
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex items-center gap-3">
+                        <Avatar className="h-8 w-8">
+                          <AvatarFallback className={cn(msg.isLatest ? "bg-primary text-primary-foreground" : "bg-muted-foreground/20")}>
+                            {msg.senderName.slice(0, 1).toUpperCase()}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="grid gap-0.5">
+                          <div className="text-sm font-semibold text-foreground">
+                            {msg.senderName}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {msg.senderEmail && `<${msg.senderEmail}>`}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-xs text-muted-foreground whitespace-nowrap">
+                        {dateDisplay}
+                      </div>
+                    </div>
+
+                    <Separator className="my-2 opacity-50" />
+
+                    {/* Body */}
+                    <div className="text-sm whitespace-pre-wrap leading-relaxed">
+                      {msg.content}
+                    </div>
+                  </div>
+                );
               });
-
-              if (currentSegment.content.length > 0) segments.push(currentSegment);
-
-              // Reverse segments to show oldest (history) first, then newest (latest reply)
-              return segments.reverse().map((segment, index) => (
-                <div
-                  key={index}
-                  className={cn(
-                    "whitespace-pre-wrap rounded-lg p-3",
-                    segment.type === 'quote'
-                      ? "bg-muted/50 text-muted-foreground border-l-4 border-muted italic text-xs"
-                      : "bg-card text-card-foreground border shadow-sm"
-                  )}
-                >
-                  {segment.content.join('\n').trim()}
-                </div>
-              ));
             })()}
           </div>
         )}

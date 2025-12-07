@@ -372,7 +372,7 @@ export default function RegisterPage() {
                       id="wallet-email"
                       type="email"
                       placeholder="Enter your email or edit the generated one"
-                      className="h-12 bg-white border-slate-200 rounded-xl focus:border-slate-400 focus:ring-slate-400 text-black"
+                      className="h-12 bg-white border-slate-200 rounded-xl focus:border-slate-400 focus:ring-slate-400 text-slate-900 placeholder:text-slate-500"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       required
