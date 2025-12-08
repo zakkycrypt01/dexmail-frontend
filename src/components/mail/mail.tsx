@@ -329,17 +329,20 @@ export function MailComponent({
 
       if (message) {
         // Convert EmailMessage to Mail
+        const cleanBody = (text: string | null | undefined) => (text || '').replace(/\s*\(?Sent via DexMail - The Decentralized Email Protocol\)?\s*/g, '').trim();
+        const cleanedBody = cleanBody(message.body);
+
         const newMail: Mail = {
           id: message.messageId,
           name: message.from.split('@')[0] || 'Unknown', // Simple name extraction
           email: message.from,
           subject: message.subject,
-          text: message.body?.slice(0, 100) || '',
+          text: cleanedBody.slice(0, 100) || '',
           date: new Date(Number(message.timestamp) * 1000).toISOString(),
           read: true, // If we navigate to it, we'll mark it read in display
           labels: [],
           status: 'inbox', // Defaulting to inbox context for viewed mail
-          body: message.body || '',
+          body: cleanedBody,
           hasCryptoTransfer: message.hasCryptoTransfer,
           inReplyTo: message.inReplyTo
         };

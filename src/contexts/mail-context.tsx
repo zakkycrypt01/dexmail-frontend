@@ -55,11 +55,14 @@ export function MailProvider({ children }: { children: ReactNode }) {
                 mailService.getDrafts(user.email)
             ]);
 
+            const cleanBody = (text: string | undefined | null) => (text || '').replace(/\s*\(?Sent via DexMail - The Decentralized Email Protocol\)?\s*/g, '').trim();
+
             // Map inbox emails
             const inboxMails: Mail[] = fetchedInbox.map(m => {
                 const timestamp = parseInt(m.timestamp, 10) * 1000;
                 const dateStr = new Date(timestamp).toISOString();
                 const status = mailService.getEmailStatus(m.messageId);
+                const cleanedBody = cleanBody(m.body);
 
                 // For inbox: 'from' is the sender, 'to' is the recipient (current user)
                 return {
@@ -67,7 +70,7 @@ export function MailProvider({ children }: { children: ReactNode }) {
                     name: m.from, // Display sender's email in the list
                     email: m.from, // Sender's email for reply-to
                     subject: m.subject,
-                    text: (m.body || '').substring(0, 100) + '...',
+                    text: cleanedBody.substring(0, 100) + '...',
                     date: dateStr,
                     read: status.read,
 
@@ -76,7 +79,7 @@ export function MailProvider({ children }: { children: ReactNode }) {
                         status.archived ? 'archive' :
                             status.spam ? 'spam' :
                                 status.draft ? 'draft' : 'inbox',
-                    body: m.body || '',
+                    body: cleanedBody,
                     hasCryptoTransfer: m.hasCryptoTransfer
                 };
             });
@@ -85,6 +88,7 @@ export function MailProvider({ children }: { children: ReactNode }) {
             const sentMails: Mail[] = fetchedSent.map(m => {
                 const timestamp = parseInt(m.timestamp, 10) * 1000;
                 const dateStr = new Date(timestamp).toISOString();
+                const cleanedBody = cleanBody(m.body);
 
                 // For sent: 'from' is the sender (current user), 'to' is the recipient
                 return {
@@ -92,12 +96,12 @@ export function MailProvider({ children }: { children: ReactNode }) {
                     name: m.to[0] || 'Unknown', // Display recipient's email in the list
                     email: m.to[0] || '', // Recipient's email
                     subject: m.subject,
-                    text: (m.body || '').substring(0, 100) + '...',
+                    text: cleanedBody.substring(0, 100) + '...',
                     date: dateStr,
                     read: true, // Sent emails are always "read"
                     labels: [],
                     status: 'sent',
-                    body: m.body || '',
+                    body: cleanedBody,
                     hasCryptoTransfer: m.hasCryptoTransfer
                 };
             });
@@ -106,19 +110,22 @@ export function MailProvider({ children }: { children: ReactNode }) {
             let allMails = [...inboxMails, ...sentMails];
 
             // Fetch drafts
-            const draftMails: Mail[] = fetchedDrafts.map(d => ({
-                id: d.id,
-                name: '(Draft)',
-                email: d.to,
-                subject: d.subject || '(No Subject)',
-                text: (d.body || '').substring(0, 100) + '...',
-                date: new Date(d.timestamp).toISOString(),
-                read: true,
-                labels: [],
-                status: 'draft',
-                body: d.body,
-                hasCryptoTransfer: false // Drafts don't have crypto attached yet
-            }));
+            const draftMails: Mail[] = fetchedDrafts.map(d => {
+                const cleanedBody = cleanBody(d.body);
+                return {
+                    id: d.id,
+                    name: '(Draft)',
+                    email: d.to,
+                    subject: d.subject || '(No Subject)',
+                    text: cleanedBody.substring(0, 100) + '...',
+                    date: new Date(d.timestamp).toISOString(),
+                    read: true,
+                    labels: [],
+                    status: 'draft',
+                    body: cleanedBody,
+                    hasCryptoTransfer: false // Drafts don't have crypto attached yet
+                };
+            });
 
             setMails([...allMails, ...draftMails]);
         } catch (error) {

@@ -57,6 +57,12 @@ interface ThreadMessage {
   avatarSeed: string;
 }
 
+function cleanEmailBody(content: string): string {
+  return content
+    .replace(/\s*\(?Sent via DexMail - The Decentralized Email Protocol\)?\s*/g, '')
+    .trim();
+}
+
 function parseEmailThread(mail: Mail): ThreadMessage[] {
   const messages: ThreadMessage[] = [];
 
@@ -82,7 +88,7 @@ function parseEmailThread(mail: Mail): ThreadMessage[] {
   const threadParts = mail.body.split(/\nOn\s+(.*?)\s+wrote:\n/);
 
   // threadParts[0] is the latest message content
-  latestMessage.content = threadParts[0].trim();
+  latestMessage.content = cleanEmailBody(threadParts[0]);
   messages.push(latestMessage);
 
   // Subsequent parts come in pairs: [Header Info, Content] due to the capturing group in split
@@ -98,6 +104,7 @@ function parseEmailThread(mail: Mail): ThreadMessage[] {
 
     // Content will have > at start of lines, remove them
     content = content.replace(/^>\s?/gm, '').trim();
+    content = cleanEmailBody(content);
 
     // Check if this content itself has another "On... wrote:" inside it that wasn't caught?
     // The regex should catch global matches if used with split? 
@@ -232,7 +239,7 @@ export function MailDisplay({ mail, onBack, onNavigateToMail }: MailDisplayProps
 
     setIsSendingReply(true);
     try {
-      const fullBody = `${replyBody}\n\nOn ${format(mailDate, "PPP p")}, ${mail.name} wrote:\n> ${mail.body.replace(/\n/g, '\n> ')}`;
+      const fullBody = `${replyBody}\n\nOn ${format(mailDate, "PPP p")}, ${mail.name} wrote:\n> ${cleanEmailBody(mail.body).replace(/\n/g, '\n> ')}`;
 
       await mailService.sendEmail({
         from: user.email,
@@ -264,7 +271,7 @@ export function MailDisplay({ mail, onBack, onNavigateToMail }: MailDisplayProps
     return {
       to: '',
       subject: mail.subject.startsWith('Fwd:') ? mail.subject : `Fwd: ${mail.subject}`,
-      body: `\n\n---------- Forwarded message ----------\nFrom: ${mail.name} <${mail.email}>\nDate: ${format(mailDate, "PPP p")}\nSubject: ${mail.subject}\nTo: Me\n\n${mail.body}`
+      body: `\n\n---------- Forwarded message ----------\nFrom: ${mail.name} <${mail.email}>\nDate: ${format(mailDate, "PPP p")}\nSubject: ${mail.subject}\nTo: Me\n\n${cleanEmailBody(mail.body)}`
     };
   };
 

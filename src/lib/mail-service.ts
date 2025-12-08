@@ -265,36 +265,22 @@ class MailService {
         console.log('[Bridge] 📧 Recipient:', recipient);
         console.log('[Bridge] 📨 Sender (Reply-To):', data.from);
 
+        const isDexMail = data.from.toLowerCase().endsWith('@dexmail.app');
+        const fromEmail = isDexMail ? data.from : 'no-reply@dexmail.app';
+
         const sendGridResponse = await fetch('/api/sendgrid/send', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             to: recipient,
-            from: data.from,
+            from: {
+              email: fromEmail,
+              name: data.from
+            },
             replyTo: data.from,
             subject: data.subject,
             text: emailBody,
-            html: `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>${data.subject}</title>
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #333; }
-    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-    .footer { margin-top: 30px; font-size: 12px; color: #888; border-top: 1px solid #eee; padding-top: 10px; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    ${emailBody.replace(/\n/g, '<br/>')}
-    <div class="footer">
-      <p>Sent via DexMail - The Decentralized Email Protocol</p>
-    </div>
-  </div>
-</body>
-</html>`
+            html: emailBody.replace(/\n/g, '<br/>')
           })
         });
 

@@ -21,6 +21,8 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
         }
 
+        const fromEmail = typeof from === 'object' && from !== null ? from.email : from;
+
         const msg = {
             to,
             from,
@@ -28,6 +30,23 @@ export async function POST(req: NextRequest) {
             text,
             html: html || text,
             replyTo: replyTo,
+            headers: {
+                'Sender': fromEmail,
+                'X-Original-Sender': fromEmail,
+                'Precedence': 'normal'
+            },
+            trackingSettings: {
+                clickTracking: {
+                    enable: false,
+                    enableText: false
+                },
+                openTracking: {
+                    enable: false
+                },
+                subscriptionTracking: {
+                    enable: false
+                }
+            }
         };
 
         await sgMail.send(msg);
